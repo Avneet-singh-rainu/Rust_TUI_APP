@@ -1,6 +1,7 @@
-use crossterm::event::{poll, read, Event, KeyCode};
+use crossterm::event::{poll, read, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, terminal, QueueableCommand};
+use std::net::TcpStream;
 use std::{char, io};
 use std::{
     io::{stdout, Write},
@@ -34,12 +35,14 @@ fn chat_window(stdout: &mut io::Stdout, chat: &[String], boundary: Rect) {
 
 fn main() {
     let mut stdout = stdout();
-    let _ = crossterm::terminal::enable_raw_mode;
+    let _ = terminal::enable_raw_mode().unwrap();
     let (mut w, mut h) = terminal::size().unwrap();
     let mut bar = "═".repeat(w as usize);
     let mut prompt = String::new();
     let mut quit = false;
     let mut chat = Vec::new();
+    // let mut stream = TcpStream::connect("127.0.0.1:8080").unwrap();
+    let mut buf = [0; 64];
 
     while !quit {
         while poll(Duration::ZERO).unwrap() {
@@ -49,26 +52,46 @@ fn main() {
                     h = nh;
                     bar = "═".repeat(w as usize);
                 }
-                Event::Key(event) => match event.code {
-                    KeyCode::Char(x) => {
-                        prompt.push(x);
+                Event::Key(event) => {
+                    match event.kind {
+                        KeyEventKind::Release => {
+                            match event.code {
+                                KeyCode::Char(x) => {
+                                    prompt.push(x);
+                                }
+                                KeyCode::Enter => {
+                                    // stream.write(prompt.as_bytes()).unwrap();
+                                    //stream.flush().unwrap();
+                                    chat.push(prompt.clone());
+                                    prompt.clear();
+                                }
+                                KeyCode::Esc => {
+                                    prompt.clear();
+                                }
+                                KeyCode::Backspace => {
+                                    prompt.pop();
+                                }
+                                _ => todo!(),
+                            }
+                        }
+                        _ => {}
                     }
-                    KeyCode::Enter => {
-                        chat.push(prompt.clone());
-                        prompt.clear();
-                    }
-                    KeyCode::Esc => {
-                        prompt.clear();
-                    }
-                    _ => {}
-                },
-                _ => {}
+                }
+                _ => todo!(),
             }
         }
+
         stdout
             .queue(terminal::Clear(ClearType::FromCursorUp))
             .unwrap();
-        
+        stdout.queue(cursor::MoveTo(0, h - 2)).unwrap();
+        stdout.write(bar.as_bytes()).unwrap();
+
+        stdout.queue(cursor::MoveTo(0, h - 1)).unwrap();
+        stdout
+            .queue(terminal::Clear(ClearType::CurrentLine))
+            .unwrap();
+        stdout.write(prompt.as_bytes()).unwrap();
 
         chat_window(
             &mut stdout,
@@ -81,13 +104,9 @@ fn main() {
             },
         );
 
-        stdout.queue(cursor::MoveTo(0, h - 2)).unwrap();
-        stdout.write(bar.as_bytes()).unwrap();
-
-        stdout.queue(cursor::MoveTo(0, h - 1)).unwrap();
-        stdout.write(prompt.as_bytes()).unwrap();
+        thread::sleep(Duration::from_millis(33));
 
         stdout.flush().unwrap();
-        thread::sleep(Duration::from_millis(33));
+        let _ = terminal::disable_raw_mode();
     }
 }
