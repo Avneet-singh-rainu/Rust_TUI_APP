@@ -1,7 +1,6 @@
-use crossterm::event::read;
+use crossterm::event::{poll, read, Event, KeyCode};
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, terminal, QueueableCommand};
-use std::str::Bytes;
 use std::{char, io};
 use std::{
     io::{stdout, Write},
@@ -12,10 +11,10 @@ use std::{
 ////////////////////////////////////////////////////////////////////////////
 
 struct Rect {
-    x: u16,
-    y: u16,
-    w: u16,
-    h: u16,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
 }
 
 fn chat_window(stdout: &mut io::Stdout, chat: &[String], boundary: Rect) {
@@ -24,83 +23,71 @@ fn chat_window(stdout: &mut io::Stdout, chat: &[String], boundary: Rect) {
 
     for (row, line) in chat.iter().skip(m).enumerate() {
         stdout.queue(cursor::MoveTo(0, row as u16)).unwrap();
-        stdout.write(line.as_bytes());
+        let bytes = line.as_bytes();
+        if bytes.len() < boundary.w as usize {
+            stdout.write(bytes).unwrap();
+        } else {
+            stdout.write(&bytes[0..boundary.w]).unwrap(); //need correcttoon
+        }
     }
 }
 
 fn main() {
-    let _ = crossterm::terminal::enable_raw_mode;
     let mut stdout = stdout();
+    let _ = crossterm::terminal::enable_raw_mode;
     let (mut w, mut h) = terminal::size().unwrap();
     let mut bar = "═".repeat(w as usize);
-    let label = "HEllo World";
     let mut prompt = String::new();
     let mut quit = false;
     let mut chat = Vec::new();
 
     while !quit {
-        let r = crossterm::event::poll(Duration::ZERO).unwrap();
-        while r {
+        while poll(Duration::ZERO).unwrap() {
             match read().unwrap() {
-                crossterm::event::Event::Resize(nw, nh) => {
+                Event::Resize(nw, nh) => {
                     w = nw;
                     h = nh;
                     bar = "═".repeat(w as usize);
                 }
-                crossterm::event::Event::Key(event) => match event.code {
-                    crossterm::event::KeyCode::Char(x) => {
-                        if x == 'c'
-                            && event
-                                .modifiers
-                                .contains(crossterm::event::KeyModifiers::CONTROL)
-                        {
-                            quit = true;
-                            break;
-                        } else {
-                            prompt.push(x);
-                        }
+                Event::Key(event) => match event.code {
+                    KeyCode::Char(x) => {
+                        prompt.push(x);
                     }
-                    crossterm::event::KeyCode::Enter => {
+                    KeyCode::Enter => {
                         chat.push(prompt.clone());
+                        prompt.clear();
+                    }
+                    KeyCode::Esc => {
                         prompt.clear();
                     }
                     _ => {}
                 },
-                _ => (),
+                _ => {}
             }
-
-            stdout
-                .queue(terminal::Clear(ClearType::FromCursorUp))
-                .unwrap();
-            stdout.queue(terminal::Clear(ClearType::All)).unwrap();
-
-            chat_window(
-                &mut stdout,
-                &chat,
-                Rect {
-                    x: 0,
-                    y: 0,
-                    w,
-                    h: h, //h/2
-                },
-            );
-
-            // stdout
-            //  .queue(cursor::MoveTo(w / 2 - label.len() as u16 / 2, h / 2))
-            //    .unwrap();
-            // stdout.write(label.as_bytes()).unwrap();
-            stdout.queue(cursor::MoveTo(0, h - 2)).unwrap();
-            stdout.write(bar.as_bytes()).unwrap();
-            stdout.queue(cursor::MoveTo(0, h)).unwrap();
-            stdout.write(prompt.as_bytes()).unwrap();
-            stdout.flush().unwrap();
         }
-
-        stdout.queue(cursor::MoveTo(0, h)).unwrap();
         stdout
             .queue(terminal::Clear(ClearType::FromCursorUp))
             .unwrap();
-        stdout.write(b"out of the application....").unwrap();
+        
+
+        chat_window(
+            &mut stdout,
+            &chat,
+            Rect {
+                x: 0,
+                y: 0,
+                w: w as usize,
+                h: h as usize, //h/2
+            },
+        );
+
+        stdout.queue(cursor::MoveTo(0, h - 2)).unwrap();
+        stdout.write(bar.as_bytes()).unwrap();
+
+        stdout.queue(cursor::MoveTo(0, h - 1)).unwrap();
+        stdout.write(prompt.as_bytes()).unwrap();
+
         stdout.flush().unwrap();
+        thread::sleep(Duration::from_millis(33));
     }
 }
